@@ -61,7 +61,7 @@ def vikor(decision_matrix, weights, criterion_types, v=0.5):
 # STREAMLIT UI
 # ---------------------------------------
 st.set_page_config(page_title="Sistem Pendukung Keputusan - VIKOR", layout="centered")
-st.title("💡 Sistem Pendukung Keputusan - Metode VIKOR")
+st.title("💡 Sistem Pendukung Keputusan rekomendasi laptop terbaik untuk mahasiswa menggunakan Metode VIKOR")
 st.write("Gunakan aplikasi ini untuk menghitung hasil ranking alternatif berdasarkan metode **VIKOR**.")
 
 st.divider()
@@ -123,4 +123,4 @@ if m and n:
         )
 
 st.divider()
-st.caption("Dibuat dengan ❤️ menggunakan Streamlit & Python | Metode VIKOR")
+st.caption("Dibuat oleh kelompok 1 SPK STT Wastukancana Purwakarta menggunakan Streamlit & Python | Metode VIKOR")
