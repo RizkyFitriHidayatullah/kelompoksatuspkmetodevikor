@@ -1,188 +1,125 @@
-# =====================================================
-# SPK VIKOR STREAMLIT - VERSI FULL ANTI ERROR
-# =====================================================
-
-import numpy as np
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import numpy as np
 
-# =====================================================
-# FUNGSI BACA CSV ANTI ERROR
-# =====================================================
-def read_csv_safely(uploaded_file):
-    encodings = ["utf-8", "latin-1", "iso-8859-1", "cp1252"]
-    delimiters = [",", ";", "\t", "|"]
+# ============================================================
+# CLEAN VIKOR FUNCTION (bebas error)
+# ============================================================
+def vikor(matrix, weights, types, v=0.5):
+    f_star = np.max(matrix, axis=0)
+    f_minus = np.min(matrix, axis=0)
 
-    for enc in encodings:
-        for delim in delimiters:
-            try:
-                df = pd.read_csv(uploaded_file, encoding=enc, delimiter=delim, engine="python")
-                df = df.loc[:, ~df.columns.duplicated()]  # Hapus kolom duplikat
-                return df
-            except Exception:
-                continue
-
-    st.error("❌ CSV tidak dapat dibaca. Silakan simpan ulang sebagai CSV UTF-8.")
-    return None
-
-# =====================================================
-# FUNGSI VIKOR
-# =====================================================
-def vikor(decision_matrix, weights, criterion_types, v=0.5, alternatives=None):
-
-    m, n = decision_matrix.shape
-
-    # Step 1: nilai terbaik & terburuk
-    f_star = np.zeros(n)
-    f_minus = np.zeros(n)
-    for j in range(n):
-        if criterion_types[j] == 'benefit':
-            f_star[j] = np.max(decision_matrix[:, j])
-            f_minus[j] = np.min(decision_matrix[:, j])
-        else:
-            f_star[j] = np.min(decision_matrix[:, j])
-            f_minus[j] = np.max(decision_matrix[:, j])
-
-    # Step 2: hitung S dan R
+    m, n = matrix.shape
     S = np.zeros(m)
     R = np.zeros(m)
+
     for i in range(m):
-        weighted_diff = []
-        for j in range(n):
-            denom = (f_star[j] - f_minus[j])
-            normalized = 0 if denom == 0 else (
-                (f_star[j] - decision_matrix[i, j]) / denom
-                if criterion_types[j] == 'benefit'
-                else (decision_matrix[i, j] - f_star[j]) / denom
-            )
-            weighted_diff.append(weights[j] * normalized)
+        diff = (f_star - matrix[i]) / (f_star - f_minus + 1e-9)
+        weighted = weights * diff
+        S[i] = np.sum(weighted)
+        R[i] = np.max(weighted)
 
-        S[i] = np.sum(weighted_diff)
-        R[i] = np.max(weighted_diff)
+    S_min, S_max = np.min(S), np.max(S)
+    R_min, R_max = np.min(R), np.max(R)
 
-    # Step 3: hitung Q
-    S_star, S_minus = S.min(), S.max()
-    R_star, R_minus = R.min(), R.max()
+    Q = v * (S - S_min) / (S_max - S_min + 1e-9) + \
+        (1 - v) * (R - R_min) / (R_max - R_min + 1e-9)
 
-    Q = v * (S - S_star) / (S_minus - S_star + 1e-9) + \
-        (1 - v) * (R - R_star) / (R_minus - R_star + 1e-9)
+    return S, R, Q
 
-    df = pd.DataFrame({
-        "Alternative": alternatives if alternatives else [f"A{i+1}" for i in range(m)],
-        "S": S,
-        "R": R,
-        "Q": Q
-    })
 
-    df["Rank"] = df["Q"].rank(method="min")
-    df = df.sort_values("Q")
-
-    return df
-
-# =====================================================
+# ============================================================
 # STREAMLIT UI
-# =====================================================
-st.set_page_config(page_title="SPK VIKOR", layout="centered")
-st.title("💡 Sistem Pendukung Keputusan – Metode VIKOR")
-st.write("Bisa menggunakan **upload CSV** atau **input manual**.")
+# ============================================================
+st.title("SPK Metode VIKOR – Versi Anti Error 🚀")
 
-st.divider()
+uploaded = st.file_uploader("Upload file CSV", type=["csv"])
 
-# PILIH MODE
-mode = st.radio("Pilih Mode Input:", ["Upload CSV", "Input Manual"])
-
-# =====================================================
-# MODE 1: UPLOAD CSV
-# =====================================================
-if mode == "Upload CSV":
-
-    st.header("📂 Upload Dataset CSV")
-
-    file = st.file_uploader("Upload file .csv", type=["csv"])
-
-    if file:
-        df = read_csv_safely(file)
-        if df is None:
+if uploaded:
+    # ======================================
+    # 1. BACA CSV AMAN TANPA ERROR
+    # ======================================
+    try:
+        df = pd.read_csv(uploaded, encoding="utf-8", on_bad_lines="skip")
+    except:
+        try:
+            df = pd.read_csv(uploaded, encoding="ISO-8859-1", on_bad_lines="skip")
+        except:
+            st.error("Gagal membaca file CSV!")
             st.stop()
 
-        # Kolom pertama → alternatif
-        alternatives = df.iloc[:, 0].astype(str).tolist()
+    # ======================================
+    # 2. HAPUS DUPLICATE COLUMN
+    # ======================================
+    df.columns = pd.io.parsers.ParserBase({'names': df.columns})._maybe_dedup_names(df.columns)
 
-        # Kolom berikutnya → nilai numerik (clean otomatis)
-        raw_matrix = df.iloc[:, 1:]
+    # ======================================
+    # 3. PILIH KOLOM NUMERIK SAJA
+    # ======================================
+    numeric_df = df.select_dtypes(include=[np.number])
 
-        numeric_matrix = raw_matrix.apply(pd.to_numeric, errors="coerce")
+    if numeric_df.shape[1] == 0:
+        st.error("Tidak ada kolom numerik di file CSV!")
+        st.stop()
 
-        if numeric_matrix.isna().sum().sum() > 0:
-            st.warning("⚠ Beberapa data non-numerik dikonversi menjadi NaN secara otomatis.")
+    # ======================================
+    # 4. KONVERSI PAKSA SEMUA KE NUMERIK
+    # ======================================
+    numeric_df = numeric_df.apply(pd.to_numeric, errors='coerce')
 
-        st.subheader("📄 Preview Data")
-        st.dataframe(df.head(10), use_container_width=True)
+    # ======================================
+    # 5. ISI NaN DENGAN MEDIAN
+    # ======================================
+    numeric_df = numeric_df.fillna(numeric_df.median())
 
-        decision_matrix = numeric_matrix.to_numpy()
-        n = decision_matrix.shape[1]
+    st.subheader("Preview Data Bersih")
+    st.dataframe(numeric_df.head())
 
-        st.subheader("⚙ Input Bobot & Jenis Kriteria")
-        weights = []
-        criterion_types = []
+    # ======================================
+    # 6. INPUT BOBOT DAN TIPE KRITERIA
+    # ======================================
+    n = numeric_df.shape[1]
 
-        for j in range(n):
-            weights.append(st.number_input(f"Bobot C{j+1}", min_value=0.0, value=0.1, step=0.1))
-            criterion_types.append(st.selectbox(f"Jenis C{j+1}", ["benefit", "cost"], key=f"ct_{j}"))
+    st.subheader("Masukkan Bobot (jumlah kolom = jumlah bobot)")
+    w_str = st.text_input(f"Masukkan {n} bobot dipisahkan koma", ",".join(["1"]*n))
 
-        if st.button("🚀 Proses VIKOR"):
-            weights = np.array(weights) / np.sum(weights)
-            result = vikor(decision_matrix, weights, criterion_types, alternatives=alternatives)
+    try:
+        weights = np.array([float(x) for x in w_str.split(",")])
+        weights = weights / weights.sum()
+    except:
+        st.error("Format bobot tidak valid!")
+        st.stop()
 
-            st.success("Perhitungan selesai!")
+    st.subheader("Masukkan Tipe Kriteria (benefit/cost)")
+    types_str = st.text_input(f"Masukkan {n} tipe (benefit/cost)", ",".join(["benefit"]*n))
+
+    types = [t.strip().lower() for t in types_str.split(",")]
+    if len(types) != n:
+        st.error("Jumlah tipe tidak sama dengan jumlah kolom!")
+        st.stop()
+
+    # ubah cost → dikali -1
+    for i in range(n):
+        if types[i] == "cost":
+            numeric_df.iloc[:, i] *= -1
+
+    # ======================================
+    # 7. HITUNG VIKOR AMAN
+    # ======================================
+    if st.button("Hitung VIKOR"):
+        try:
+            matrix = numeric_df.values
+            S, R, Q = vikor(matrix, weights, types)
+
+            result = pd.DataFrame({
+                "Alternative": df.index,
+                "S": S,
+                "R": R,
+                "Q": Q
+            }).sort_values("Q")
+
+            st.subheader("Hasil Perhitungan VIKOR")
             st.dataframe(result)
 
-            best = result.iloc[0]
-            st.subheader(f"🏆 Alternatif Terbaik: {best['Alternative']}")
-            st.balloons()
-
-            st.download_button("📥 Download Hasil", result.to_csv(index=False), "hasil_vikor.csv")
-
-# =====================================================
-# MODE 2: INPUT MANUAL
-# =====================================================
-if mode == "Input Manual":
-    st.header("📝 Input Manual")
-
-    m = st.number_input("Jumlah Alternatif", min_value=2)
-    n = st.number_input("Jumlah Kriteria", min_value=2)
-
-    if m and n:
-        with st.form("manual"):
-            alternatives = [st.text_input(f"Nama Alternatif {i+1}", f"A{i+1}") for i in range(int(m))]
-            criteria = [st.text_input(f"Nama Kriteria {j+1}", f"C{j+1}") for j in range(int(n))]
-
-            weights = [st.number_input(f"Bobot {criteria[j]}", min_value=0.0, value=0.1, step=0.1) for j in range(int(n))]
-            criterion_types = [st.selectbox(f"Jenis {criteria[j]}", ["benefit", "cost"], key=f"tp_{j}") for j in range(int(n))]
-
-            matrix = []
-            for i in range(int(m)):
-                row = []
-                for j in range(int(n)):
-                    row.append(st.number_input(f"{criteria[j]} untuk {alternatives[i]}", value=0.0))
-                matrix.append(row)
-
-            submit = st.form_submit_button("🚀 Proses VIKOR")
-
-        if submit:
-            decision_matrix = np.array(matrix)
-            weights = np.array(weights) / np.sum(weights)
-
-            result = vikor(decision_matrix, weights, criterion_types, alternatives=alternatives)
-
-            st.success("Perhitungan selesai!")
-            st.dataframe(result)
-
-            best = result.iloc[0]
-            st.subheader(f"🏆 Alternatif Terbaik: {best['Alternative']}")
-            st.balloons()
-
-            st.download_button("📥 Download Hasil", result.to_csv(index=False), "hasil_vikor.csv")
-
-st.divider()
-st.caption("SPK VIKOR – FULL AUTO CLEAN – Tanpa Error")
+        except Exception as e:
+            st.error(f"Error saat menghitung VIKOR: {e}")
