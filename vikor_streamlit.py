@@ -10,7 +10,7 @@ import streamlit as st
 # ---------------------------------------
 # FUNGSI VIKOR
 # ---------------------------------------
-def vikor(decision_matrix, weights, criterion_types, v=0.5):
+def vikor(decision_matrix, weights, criterion_types, v=0.5, alternatives=None):
     m, n = decision_matrix.shape
 
     # Step 1: nilai terbaik (f*) dan terburuk (f-)
@@ -48,11 +48,12 @@ def vikor(decision_matrix, weights, criterion_types, v=0.5):
 
     # Step 4: hasil dan ranking
     df = pd.DataFrame({
-        'Alternative': [f"A{i+1}" for i in range(m)],
+        'Alternative': alternatives if alternatives else [f"A{i+1}" for i in range(m)],
         'S': S,
         'R': R,
         'Q': Q
     })
+
     df['Rank'] = df['Q'].rank(method='min')
     df = df.sort_values(by='Q')
     return df
@@ -60,67 +61,114 @@ def vikor(decision_matrix, weights, criterion_types, v=0.5):
 # ---------------------------------------
 # STREAMLIT UI
 # ---------------------------------------
-st.set_page_config(page_title="Sistem Pendukung Keputusan - VIKOR", layout="centered")
-st.title("💡 Sistem Pendukung Keputusan Rekomendasi Laptop Terbaik untuk Mahasiswa")
-st.write("Gunakan aplikasi ini untuk menentukan alternatif laptop terbaik berdasarkan metode **VIKOR**.")
+st.set_page_config(page_title="SPK VIKOR", layout="centered")
+st.title("💡 Sistem Pendukung Keputusan – Metode VIKOR")
+st.write("Gunakan aplikasi ini dengan **upload dataset CSV** atau **input manual**.")
 
 st.divider()
 
-# INPUT DASAR
-st.header("1️⃣ Input Data Alternatif & Kriteria")
-m = st.number_input("Jumlah Alternatif", min_value=2, step=1)
-n = st.number_input("Jumlah Kriteria", min_value=2, step=1)
+# ===========================
+# PILIH MODE INPUT
+# ===========================
+mode = st.radio("Pilih Mode Input:", ["Upload CSV", "Input Manual"])
 
-if m and n:
-    with st.form("input_form"):
-        st.subheader("Masukkan Data Alternatif dan Kriteria")
+# ============================================================
+# MODE 1: UPLOAD CSV
+# ============================================================
+if mode == "Upload CSV":
+    st.header("📂 Upload Dataset CSV")
 
-        alternatives = []
-        for i in range(int(m)):
-            alternatives.append(st.text_input(f"Nama Alternatif ke-{i+1}", f"A{i+1}"))
+    st.info("""
+**Format CSV yang diterima:**
 
-        criteria = []
-        for j in range(int(n)):
-            criteria.append(st.text_input(f"Nama Kriteria ke-{j+1}", f"C{j+1}"))
+- Kolom pertama = *Nama Alternatif*  
+- Kolom berikutnya = nilai kriteria  
+- Bobot dan jenis kriteria diisi manual di bawah  
+""")
 
+    file = st.file_uploader("Upload file .csv", type=["csv"])
+
+    if file:
+        df = pd.read_csv(file)
+        st.subheader("📄 Data CSV")
+        st.dataframe(df)
+
+        alternatives = df.iloc[:, 0].tolist()
+        decision_matrix = df.iloc[:, 1:].to_numpy()
+        n = decision_matrix.shape[1]
+
+        st.subheader("⚙ Bobot & Jenis Kriteria")
         weights = []
-        for j in range(int(n)):
-            weights.append(st.number_input(f"Bobot untuk {criteria[j]}", min_value=0.0, step=0.1, value=0.1))
-
         criterion_types = []
-        for j in range(int(n)):
-            criterion_types.append(st.selectbox(f"Jenis {criteria[j]}", ["benefit", "cost"], key=f"type_{j}"))
 
-        st.write("Masukkan Nilai Matriks Keputusan:")
-        data = []
-        for i in range(int(m)):
-            row = []
-            for j in range(int(n)):
-                val = st.number_input(f"Nilai {criteria[j]} untuk {alternatives[i]}", step=0.1, key=f"{i}_{j}")
-                row.append(val)
-            data.append(row)
-        matrix = np.array(data)
+        for j in range(n):
+            weights.append(st.number_input(f"Bobot C{j+1}", min_value=0.0, step=0.1, value=0.1))
+            criterion_types.append(st.selectbox(f"Jenis C{j+1}", ["benefit", "cost"], key=f"ct_{j}"))
 
-        submit = st.form_submit_button("🚀 Proses Perhitungan VIKOR")
+        if st.button("🚀 Proses VIKOR dengan CSV"):
+            weights = np.array(weights) / np.sum(weights)
+            result = vikor(decision_matrix, weights, criterion_types, alternatives=alternatives)
 
-    if submit:
-        weights = np.array(weights) / np.sum(weights)
-        result = vikor(matrix, weights, criterion_types, v=0.5)
-        result['Alternative'] = alternatives
+            st.success("Perhitungan selesai!")
+            st.dataframe(result, use_container_width=True)
 
-        st.success("✅ Perhitungan selesai!")
-        st.dataframe(result, use_container_width=True)
+            best = result.iloc[0]
+            st.subheader(f"🏆 Alternatif terbaik: {best['Alternative']} (Rank 1)")
+            st.balloons()
 
-        best = result.iloc[0]
-        st.subheader(f"🏆 Alternatif terbaik: {best['Alternative']} (Rank 1)")
-        st.balloons()
+            st.download_button(
+                "📥 Download Hasil (CSV)",
+                result.to_csv(index=False),
+                "hasil_vikor.csv",
+                "text/csv"
+            )
 
-        st.download_button(
-            label="📥 Download Hasil (CSV)",
-            data=result.to_csv(index=False).encode('utf-8'),
-            file_name='hasil_vikor.csv',
-            mime='text/csv'
-        )
+# ============================================================
+# MODE 2: INPUT MANUAL
+# ============================================================
+if mode == "Input Manual":
+    st.header("📝 Input Manual Alternatif, Kriteria, Bobot")
+
+    m = st.number_input("Jumlah Alternatif", min_value=2, step=1)
+    n = st.number_input("Jumlah Kriteria", min_value=2, step=1)
+
+    if m and n:
+        with st.form("manual_form"):
+            alternatives = [st.text_input(f"Nama Alternatif ke-{i+1}", f"A{i+1}") for i in range(int(m))]
+            criteria = [st.text_input(f"Nama Kriteria ke-{j+1}", f"C{j+1}") for j in range(int(n))]
+
+            weights = [st.number_input(f"Bobot {criteria[j]}", min_value=0.0, step=0.1, value=0.1) for j in range(int(n))]
+            criterion_types = [st.selectbox(f"Jenis {criteria[j]}", ["benefit", "cost"], key=f"type_{j}") for j in range(int(n))]
+
+            st.subheader("📊 Nilai Matriks Keputusan")
+            data = []
+            for i in range(int(m)):
+                row = []
+                for j in range(int(n)):
+                    row.append(st.number_input(f"{criteria[j]} untuk {alternatives[i]}", step=0.1, key=f"{i}_{j}"))
+                data.append(row)
+
+            submit = st.form_submit_button("🚀 Proses Perhitungan VIKOR")
+
+        if submit:
+            matrix = np.array(data)
+            weights = np.array(weights) / np.sum(weights)
+
+            result = vikor(matrix, weights, criterion_types, alternatives=alternatives)
+
+            st.success("🎉 Perhitungan selesai!")
+            st.dataframe(result, use_container_width=True)
+
+            best = result.iloc[0]
+            st.subheader(f"🏆 Alternatif terbaik: {best['Alternative']} (Rank 1)")
+            st.balloons()
+
+            st.download_button(
+                "📥 Download Hasil (CSV)",
+                result.to_csv(index=False),
+                "hasil_vikor.csv",
+                "text/csv"
+            )
 
 st.divider()
-st.caption("Dibuat oleh Kelompok 1 SPK STT Wastukancana Purwakarta menggunakan Streamlit & Python | Metode VIKOR")
+st.caption("Aplikasi SPK Metode VIKOR | Python Streamlit | Kelompok 1 STT Wastukancana")
