@@ -1,8 +1,3 @@
-# =====================================================
-# File: vikor_streamlit_full.py
-# SPK Rekomendasi Laptop Terbaik – Metode VIKOR (Streamlit)
-# =====================================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,183 +6,111 @@ import numpy as np
 # Konfigurasi Halaman
 # ---------------------------------------
 st.set_page_config(
-    page_title="SPK Rekomendasi Laptop Terbaik (VIKOR)",
-    layout="centered"
+    page_title="SPK Rekomendasi Laptop Terbaik (Metode VIKOR)",
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # ---------------------------------------
-# Judul & Deskripsi
+# Judul dan Deskripsi Aplikasi
 # ---------------------------------------
 st.title("💻 SPK Rekomendasi Laptop Terbaik untuk Mahasiswa")
 st.markdown("### Metode VIKOR (Multi-Criteria Decision Making)")
-st.write("Tentukan laptop terbaik berdasarkan kriteria menggunakan metode **VIKOR**.")
-
-st.divider()
+st.write("Aplikasi ini membantu menentukan laptop terbaik berdasarkan kriteria yang kamu tentukan menggunakan metode **VIKOR**.")
 
 # ---------------------------------------
-# Pilih Mode Input
+# Input Data Alternatif dan Kriteria
 # ---------------------------------------
-mode = st.radio("Pilih Mode Input:", ["Upload CSV/XLSX", "Input Manual"])
+st.subheader("📊 Input Data Alternatif dan Kriteria")
 
-# =======================================
-# Fungsi VIKOR
-# =======================================
-def vikor(decision_matrix, weights, criterion_types, v=0.5, alternatives=None):
-    m, n = decision_matrix.shape
+uploaded_file = st.file_uploader("Upload file Excel/CSV berisi data alternatif dan kriteria:", type=["csv", "xlsx"])
 
-    # Step 1: nilai terbaik (f*) dan terburuk (f-)
-    f_star = np.max(decision_matrix, axis=0) if all(t == "Benefit" for t in criterion_types) else None
-    f_minus = np.min(decision_matrix, axis=0) if all(t == "Benefit" for t in criterion_types) else None
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+    st.dataframe(df)
 
-    f_star = np.zeros(n)
-    f_minus = np.zeros(n)
-    for j in range(n):
-        if criterion_types[j] == "Benefit":
-            f_star[j] = np.max(decision_matrix[:, j])
-            f_minus[j] = np.min(decision_matrix[:, j])
-        else:
-            f_star[j] = np.min(decision_matrix[:, j])
-            f_minus[j] = np.max(decision_matrix[:, j])
+    # Input jenis kriteria (Benefit/Cost)
+    st.subheader("⚙️ Tipe Kriteria")
+    criteria_type = []
+    for col in df.columns[1:]:
+        tipe = st.selectbox(f"{col}", ["Benefit", "Cost"], key=col)
+        criteria_type.append(tipe)
 
-    # Step 2: hitung S dan R
-    S = np.zeros(m)
-    R = np.zeros(m)
-    for i in range(m):
-        weighted_diff = []
-        for j in range(n):
-            denom = f_star[j] - f_minus[j] if f_star[j] != f_minus[j] else 1e-9
-            normalized = (f_star[j] - decision_matrix[i, j]) / denom if criterion_types[j] == "Benefit" else (decision_matrix[i, j] - f_star[j]) / denom
-            weighted_diff.append(weights[j] * normalized)
-        S[i] = np.sum(weighted_diff)
-        R[i] = np.max(weighted_diff)
+    # Input bobot untuk masing-masing kriteria
+    st.subheader("⚖️ Bobot Kriteria")
+    weights = []
+    for col in df.columns[1:]:
+        weight = st.slider(f"Bobot {col}", 0.0, 1.0, 0.1)
+        weights.append(weight)
+    weights = np.array(weights) / np.sum(weights)
 
-    # Step 3: hitung Q
-    S_star, S_minus = np.min(S), np.max(S)
-    R_star, R_minus = np.min(R), np.max(R)
-    Q = np.zeros(m)
-    for i in range(m):
-        Q[i] = v * (S[i] - S_star) / (S_minus - S_star + 1e-9) + \
-               (1 - v) * (R[i] - R_star) / (R_minus - R_star + 1e-9)
+    # ---------------------------------------
+    # Proses Perhitungan Metode VIKOR
+    # ---------------------------------------
+    st.subheader("🧮 Hasil Perhitungan Metode VIKOR")
 
-    # Step 4: hasil & ranking
-    df = pd.DataFrame({
-        "Alternative": alternatives if alternatives else [f"A{i+1}" for i in range(m)],
-        "S": S,
-        "R": R,
-        "Q": Q
-    })
-    df["Rank"] = df["Q"].rank(method="min")
-    df = df.sort_values("Q").reset_index(drop=True)
-    return df
+    data = df.iloc[:, 1:].values.astype(float)
+    f_star = np.max(data, axis=0)
+    f_minus = np.min(data, axis=0)
 
-# =======================================
-# MODE 1: Upload CSV/XLSX
-# =======================================
-if mode == "Upload CSV/XLSX":
-    st.header("📂 Upload Dataset CSV/XLSX")
-    uploaded_file = st.file_uploader("Pilih file CSV atau Excel", type=["csv", "xlsx"])
-
-    if uploaded_file:
-        try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
+    S = []
+    R = []
+    for i in range(len(data)):
+        s_val = 0
+        r_val = -np.inf
+        for j in range(len(f_star)):
+            if criteria_type[j] == "Benefit":
+                s_val += weights[j] * (f_star[j] - data[i, j]) / (f_star[j] - f_minus[j])
+                r_val = max(r_val, weights[j] * (f_star[j] - data[i, j]) / (f_star[j] - f_minus[j]))
             else:
-                df = pd.read_excel(uploaded_file)
-        except Exception as e:
-            st.error(f"❌ Gagal membaca file: {e}")
-            st.stop()
+                s_val += weights[j] * (data[i, j] - f_minus[j]) / (f_star[j] - f_minus[j])
+                r_val = max(r_val, weights[j] * (data[i, j] - f_minus[j]) / (f_star[j] - f_minus[j]))
+        S.append(s_val)
+        R.append(r_val)
 
-        st.subheader("📄 Data Alternatif")
-        st.dataframe(df)
+    S = np.array(S)
+    R = np.array(R)
+    Q = []
+    v = 0.5  # faktor strategi
+    for i in range(len(S)):
+        q_val = v * (S[i] - np.min(S)) / (np.max(S) - np.min(S)) + \
+                (1 - v) * (R[i] - np.min(R)) / (np.max(R) - np.min(R))
+        Q.append(q_val)
 
-        # Input tipe kriteria
-        st.subheader("⚙️ Tipe Kriteria")
-        criterion_type = []
-        for col in df.columns[1:]:
-            tipe = st.selectbox(f"{col}", ["Benefit", "Cost"], key=col)
-            criterion_type.append(tipe)
+    df["S"] = S
+    df["R"] = R
+    df["Q"] = Q
+    df = df.sort_values(by="Q")
 
-        # Input bobot
-        st.subheader("⚖️ Bobot Kriteria")
-        weights = []
-        for col in df.columns[1:]:
-            weight = st.slider(f"Bobot {col}", 0.0, 1.0, 0.1)
-            weights.append(weight)
-        weights = np.array(weights) / np.sum(weights)
+    st.success("✅ Perhitungan selesai!")
+    st.write("Berikut hasil ranking laptop terbaik berdasarkan metode VIKOR:")
+    st.dataframe(df.reset_index(drop=True))
 
-        # Faktor strategi v
-        v = st.slider("Faktor strategi v", 0.0, 1.0, 0.5)
+    st.subheader("🏆 Rekomendasi Akhir")
+    best = df.iloc[0, 0]
+    st.markdown(f"### 🎯 Laptop terbaik yang direkomendasikan adalah: **{best}**")
 
-        if st.button("🚀 Proses VIKOR"):
-            # Konversi data ke numerik
-            try:
-                data = df.iloc[:, 1:].apply(pd.to_numeric, errors="coerce").fillna(0).values
-            except Exception as e:
-                st.error(f"❌ Gagal mengkonversi data ke numerik: {e}")
-                st.stop()
+else:
+    st.info("Silakan upload file data terlebih dahulu (CSV/XLSX).")
 
-            result = vikor(data, weights, criterion_type, v=v, alternatives=df.iloc[:, 0].tolist())
-            st.success("✅ Perhitungan selesai!")
-            st.dataframe(result)
+# ---------------------------------------
+# SEMBUNYIKAN HEADER, GITHUB LINK, FOOTER
+# ---------------------------------------
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    [data-testid="stStatusWidget"] {display: none !important;}
+    [data-testid="stSidebarNav"] {display: none !important;}
+    [data-testid="stAppViewContainer"] > div:first-child {padding-top: 0rem;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-            # Alternatif terbaik
-            best = result.iloc[0, 0]
-            st.subheader(f"🏆 Laptop terbaik: {best}")
 
-            # Download CSV
-            st.download_button(
-                "📥 Download Hasil (CSV)",
-                result.to_csv(index=False).encode("utf-8"),
-                "hasil_vikor.csv",
-                "text/csv"
-            )
-
-# =======================================
-# MODE 2: Input Manual
-# =======================================
-if mode == "Input Manual":
-    st.header("📝 Input Manual Alternatif & Kriteria")
-
-    m = st.number_input("Jumlah Alternatif", min_value=2, step=1)
-    n = st.number_input("Jumlah Kriteria", min_value=2, step=1)
-
-    if m and n:
-        with st.form("manual_form"):
-            alternatives = [st.text_input(f"Nama Alternatif ke-{i+1}", f"A{i+1}") for i in range(int(m))]
-            criteria = [st.text_input(f"Nama Kriteria ke-{j+1}", f"C{j+1}") for j in range(int(n))]
-
-            criterion_type = [st.selectbox(f"Tipe {criteria[j]}", ["Benefit", "Cost"], key=f"type_{j}") for j in range(int(n))]
-            weights = [st.slider(f"Bobot {criteria[j]}", 0.0, 1.0, 0.1) for j in range(int(n))]
-
-            v = st.slider("Faktor strategi v", 0.0, 1.0, 0.5)
-
-            st.subheader("📊 Nilai Matriks Keputusan")
-            data = []
-            for i in range(int(m)):
-                row = []
-                for j in range(int(n)):
-                    row.append(st.number_input(f"{criteria[j]} untuk {alternatives[i]}", step=0.1, key=f"{i}_{j}"))
-                data.append(row)
-
-            submit = st.form_submit_button("🚀 Hitung VIKOR")
-
-        if submit:
-            matrix = np.array(data)
-            weights = np.array(weights) / np.sum(weights)
-            result = vikor(matrix, weights, criterion_type, v=v, alternatives=alternatives)
-
-            st.success("✅ Perhitungan selesai!")
-            st.dataframe(result)
-
-            best = result.iloc[0, 0]
-            st.subheader(f"🏆 Laptop terbaik: {best}")
-
-            st.download_button(
-                "📥 Download Hasil (CSV)",
-                result.to_csv(index=False).encode("utf-8"),
-                "hasil_vikor_manual.csv",
-                "text/csv"
-            )
-
-st.divider()
-st.caption("Aplikasi SPK Metode VIKOR | Python Streamlit | Kelompok 1 STT Wastukancana")
