@@ -7,9 +7,25 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# ---------------------------------------
+# =====================================================
+# FUNGSI BACA CSV DENGAN MULTI ENCODING (ANTI ERROR)
+# =====================================================
+def read_csv_safely(uploaded_file):
+    encodings = ["utf-8", "latin-1", "cp1252"]
+
+    for enc in encodings:
+        try:
+            return pd.read_csv(uploaded_file, encoding=enc)
+        except Exception:
+            continue
+
+    st.error("❌ File CSV tidak dapat dibaca. "
+             "Silakan buka file di Excel → Save As → pilih 'CSV UTF-8'.")
+    return None
+
+# =====================================================
 # FUNGSI VIKOR
-# ---------------------------------------
+# =====================================================
 def vikor(decision_matrix, weights, criterion_types, v=0.5, alternatives=None):
     m, n = decision_matrix.shape
 
@@ -58,18 +74,18 @@ def vikor(decision_matrix, weights, criterion_types, v=0.5, alternatives=None):
     df = df.sort_values(by='Q')
     return df
 
-# ---------------------------------------
+# =====================================================
 # STREAMLIT UI
-# ---------------------------------------
+# =====================================================
 st.set_page_config(page_title="SPK VIKOR", layout="centered")
 st.title("💡 Sistem Pendukung Keputusan – Metode VIKOR")
 st.write("Gunakan aplikasi ini dengan **upload dataset CSV** atau **input manual**.")
 
 st.divider()
 
-# ===========================
+# =====================================================
 # PILIH MODE INPUT
-# ===========================
+# =====================================================
 mode = st.radio("Pilih Mode Input:", ["Upload CSV", "Input Manual"])
 
 # ============================================================
@@ -83,13 +99,16 @@ if mode == "Upload CSV":
 
 - Kolom pertama = *Nama Alternatif*  
 - Kolom berikutnya = nilai kriteria  
-- Bobot dan jenis kriteria diisi manual di bawah  
+- Bobot & jenis kriteria diinput manual  
 """)
 
     file = st.file_uploader("Upload file .csv", type=["csv"])
 
     if file:
-        df = pd.read_csv(file)
+        df = read_csv_safely(file)
+        if df is None:
+            st.stop()
+
         st.subheader("📄 Data CSV")
         st.dataframe(df)
 
@@ -134,6 +153,7 @@ if mode == "Input Manual":
 
     if m and n:
         with st.form("manual_form"):
+
             alternatives = [st.text_input(f"Nama Alternatif ke-{i+1}", f"A{i+1}") for i in range(int(m))]
             criteria = [st.text_input(f"Nama Kriteria ke-{j+1}", f"C{j+1}") for j in range(int(n))]
 
