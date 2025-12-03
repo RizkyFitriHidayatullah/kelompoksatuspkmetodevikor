@@ -100,7 +100,7 @@ def vikor(decision_matrix, weights, criterion_types, v=0.5):
 # STREAMLIT UI
 # ---------------------------------------
 st.set_page_config(page_title="SPK Laptop Mahasiswa - Metode VIKOR", layout="wide")
-st.title("💻 Sistem Pendukung Keputusan Rekomendasi Laptop Terbaik untuk Mahasiswa")
+st.title("💻 Sistem Pendukung Keputusan Rekomendasi Laptop Terbaik Untuk Mahasiswa Informatika")
 st.subheader("Metode VIKOR (Multi-Criteria Decision Making)")
 
 st.divider()
